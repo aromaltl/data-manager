@@ -1,7 +1,9 @@
 import json
 import csv
 import os
-
+import datetime
+import pandas as pd
+datetime.datetime.now()
 def json_to_csv(json_file_path, csv_file_path):
     """
     Convert annotation JSON to CSV format.
@@ -19,14 +21,15 @@ def json_to_csv(json_file_path, csv_file_path):
     
     for task in data:
         image_path = task['data']['image']
-        site_name = task['data'].get('site_name',"NA")
+        site_name = task['data'].get('site_name',"INDIA")
         image_name = os.path.basename(image_path)
-        project = task['project']
-        created_at = task['created_at']
-        
+        project = task['project'] if 'project' in task else 0
+        created_at = task.get('created_at',datetime.datetime.now())
+        annotations = task.get('annotations', task.get('predictions',[]))
         # Process each annotation
-        for annotation in task.get('annotations', []):
-            email = annotation['completed_by'].get('email', 'NA')
+
+        for annotation in annotations:
+            email = annotation.get('completed_by',{}).get('email', "sk@sk.com")
             
             # Process each result in the annotation
             for result in annotation.get('result', []):
@@ -81,6 +84,7 @@ def json_to_csv(json_file_path, csv_file_path):
     
     print(f"CSV file created: {csv_file_path}")
     print(f"Total rows: {len(csv_rows)}")
+    return pd.DataFrame(csv_rows)
 
 
 def csv_to_json(csv_file_path, json_file_path):
@@ -111,6 +115,7 @@ def csv_to_json(csv_file_path, json_file_path):
         if task_key not in tasks_dict:
             tasks_dict[task_key] = {
                 'image_path': image_path,
+                'site_name' : site_name,
                 'project_id': project_id,
                 'created_at': created_at,
                 'annotations': {}
@@ -180,12 +185,13 @@ def csv_to_json(csv_file_path, json_file_path):
     
     print(f"JSON file created: {json_file_path}")
     print(f"Total tasks: {len(json_output)}")
+    return json_output
 
 
 # Example usage
 if __name__ == "__main__":
     # Convert JSON to CSV
-    json_to_csv('/home/tl028/output.json', 'output_annotations.csv')
+    json_to_csv('/home/tl028/Desktop/data-manager/data-manager/label_studio_tasks.json', 'output_annotations.csv')
     
     # Convert CSV back to JSON
-    csv_to_json('output_annotations.csv', 'reconstructed_annotations.json')
+    csv_to_json('/home/tl028/Desktop/data-manager/data-manager/reconstructed_all_annotations.csv', 'reconstructed_annotations.json')

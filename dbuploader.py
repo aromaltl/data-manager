@@ -1,118 +1,264 @@
 import mysql.connector
 from datetime import datetime
+import json
 import pandas as pd
-# Database connection
-db = mysql.connector.connect(
-    host="192.168.2.241",
-    user="root",
-    password="password",
-    database="imgdata"
-)
-
-cursor = db.cursor()
-
-
-# Insert data into the imgdata.images table
-def insert_image_data(image_name, image_path, image_width, image_height, site_name, email, project_id, created_at):
-    insert_image_query = """
-        INSERT INTO imgdata.images (image_name, image_path, width, height, site_name, email, project, created_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+from collections import defaultdict
+def convert_csv_to_image_data(csv_file):
     """
-    cursor.execute(insert_image_query, (image_name, image_path, image_width, image_height, site_name, email, project_id, created_at))
-    db.commit()
-
-# Insert data into the imgdata.annotations table
-def insert_annotation_data(image_id, class_id, x1, y1, x2, y2, contour):
-    insert_annotation_query = """
-        INSERT INTO imgdata.annotations (image_id, class_id, x1, y1, x2, y2, contour)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+    Convert CSV with annotation data to the required nested dictionary format.
+    
+    Args:
+        csv_file_path: Path to the CSV file
+        
+    Returns:
+        List of dictionaries with image data and nested annotations
     """
-    cursor.execute(insert_annotation_query, (image_id, class_id, x1, y1, x2, y2, contour))
-    db.commit()
-
-# Ensure class_id exists (you may need to modify this if you have a `class` table)
-def get_class_id(classname):
-    cursor.execute("SELECT class_id FROM class_table WHERE classname = %s", (classname,))
-    result = cursor.fetchone()
-    if result:
-        return result[0]
+    # Read CSV file
+    if csv_file:
+        df = pd.read_csv(csv_file)
     else:
-        # If class doesn't exist, insert it and return the new class_id
-        cursor.execute("INSERT INTO class_table (classname) VALUES (%s)", (classname,))
-        db.commit()
-        return cursor.lastrowid
-def groupby(df):
-    images  =  {}
-    for x in df.iterows():
-        x=x[1]
-        if x['image_path'] not in images:
-            images[x['image_path']] =  {
-                'image_name':
-                'image_path':
-                'width':
-                'height':
-                'site_name':
-                'email':
-                'project':
-                'updated_on':
-                'annotations':[]
-            }
-        det = {
-            'x1': x['x1'],
-            'y1': x['y1'],
-            'x2': x['x2'],
-            'y2': x['y2'],
-            'class_id': x['class_name'],
-            'contour': x['contour']
+        df = csv_file
+    
+    # Strip whitespace from column names
+    df.columns = df.columns.str.strip()
+    
+    print(f"Processing CSV with {len(df)} rows...")
+    
+    # Group by image_path to combine annotations for the same image
+    image_dict = defaultdict(lambda: {
+        'annotations': []
+    })
+    
+    for _, row in df.iterrows():
+        image_path = row['image_path']
+        
+        # If this is the first time seeing this image, populate image-level fields
+        if not image_dict[image_path].get('image_name'):
+            image_dict[image_path].update({
+                'image_name': row['image_name'],
+                'image_path': row['image_path'],
+                'image_width': int(row['image_width']),
+                'image_height': int(row['image_height']),
+                'site_name': row['site_name'],
+                'usr': row['email'],
+                'project_id': int(row['project_id']),
+                'created_at': row['created_at']
+            })
+        
+        # Add annotation for this row
+        annotation = {
+            'x1': float(row['x1']),
+            'y1': float(row['y1']),
+            'x2': float(row['x2']),
+            'y2': float(row['y2']),
+            'classname': row['classname'],
+            'contour': row['contour']
+        }
+        
+        image_dict[image_path]['annotations'].append(annotation)
+    
+    # Convert defaultdict to list
+    image_data = list(image_dict.values())
+    
+    print(f"Converted to {len(image_data)} unique images")
+    print(f"Total annotations: {len(df)}")
+    print(f"Average annotations per image: {len(df) / len(image_data):.2f}")
+    
+    return image_data
+
+
+
+class DBHelper:
+    def __init__(self):
+        self.db = mysql.connector.connect(
+            host="192.168.2.241",
+            user="root",
+            password="password",
+            database="imgdata"
+        )
+        self.cursor = self.db.cursor(dictionary=True)
+        self.upload =True
+        
+        # Cache class_id mappings
+        self.cursor.execute("SELECT class_id, class_name FROM classes")
+        self.classid = {row["class_name"]: row["class_id"] for row in self.cursor.fetchall()}
+        
+        # Cache user_id mappings
+        self.cursor.execute("SELECT user_id, email FROM usr")
+        self.usrid = {row["email"]: row["user_id"] for row in self.cursor.fetchall()}
+
+    def get_user_id(self, email):
+        """Get or create user_id for given email"""
+        if email in self.usrid:
+            return self.usrid[email]
+        else:
+            input(f"New user '{email}' ?. ctrl+c to stop")
+            insert_user_query = "INSERT INTO usr (email) VALUES (%s)"
             
+            self.cursor.execute(insert_user_query, (email,))
+            self.db.commit()
+            user_id = self.cursor.lastrowid
+            self.usrid[email] = user_id
+            return user_id
 
-        }
-        images[x['image_path']]['annotations'].append(det)
+    def get_class_id(self, class_name):
+        """Get or create class_id for given class_name"""
+        if class_name in self.classid:
+            return self.classid[class_name]
+        else:
+            input(f"New class '{class_name}' ?. ctrl+c to stop")
+            insert_class_query = "INSERT INTO classes (class_name) VALUES (%s)"
+            self.cursor.execute(insert_class_query, (class_name,))
+            self.db.commit()
+            class_id = self.cursor.lastrowid
+            self.classid[class_name] = class_id
+            return class_id
 
+    def insert_image_data(self, image_name, image_path, width, height, site_name, user_id, project, created_at):
+        """Insert image data and return image_id"""
+        insert_image_query = """
+            INSERT INTO images (image_name, image_path, width, height, site_name, user_id, project, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        if self.upload:
+            self.cursor.execute(insert_image_query, (image_name, image_path, width, height, site_name, user_id, project, created_at))
+            self.db.commit()
+        return self.cursor.lastrowid
 
+    def insert_annotation_data(self, image_id, class_id, x1, y1, x2, y2):
+        """Insert annotation data and return annotation_id"""
+        insert_annotation_query = """
+            INSERT INTO annotations (image_id, class_id, x1, y1, x2, y2)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        if self.upload:
+            self.cursor.execute(insert_annotation_query, (image_id, class_id, x1, y1, x2, y2))
+            self.db.commit()
+        return self.cursor.lastrowid
 
-
-# Data to be uploaded
-if __name__ is "__main__":
-
-    image_data = [
-        {
-            'image_name': '20250610082835_000000_2460.jpeg',
-            'image_path': '/data/local-files/?d=data/FP_to_train/Sekura/JUN-20/SRTL-TP03-2025-06-05/Signboard_Information_Board/20250610082835_000000_2460.jpeg',
-            'image_width': 2560,
-            'image_height': 1440,
-            'site_name': None,
-            'email': 'abc88@gmail.com',
-            'project_id': 167,
-            'created_at': '2025-06-20T13:28:10.316824Z',
-            'annotations': [
-                {'x1': 70, 'y1': 72.7083358764648, 'x2': 70.15625, 'y2': 72.91667175292969, 'classname': 'Kerbs', 'contour': '[[70, 72.70833587646484], [70.15625, 72.91667175292969]]'},
-                {'x1': 74.53125, 'y1': 65.8333358764648, 'x2': 75.625, 'y2': 65.8333358764648, 'classname': 'Plants', 'contour': '[[75.625, 65.83333587646484], [74.53125, 65.83333587646484]]'},
-                {'x1': 83.7109375, 'y1': 62.5, 'x2': 83.828125, 'y2': 62.6388893127441, 'classname': 'Plants', 'contour': '[[83.828125, 62.5], [83.7109375, 62.63888931274414]]'}
-            ]
-        }
-    ]
-
-    # Upload data
-    cursor.execute("SELECT image_id,image_name,image_path from img.data.images;")
-    image_ids = {x['image_path'] :x['image_ids']  for x in cursor.fetchall()}
-
-    for image in image_data:
-        # Convert created_at to a datetime object
-        created_at = datetime.fromisoformat(image['created_at'].replace("Z", "+00:00"))
-        if image['image_path'] in image_ids:
-            continue
-        # Insert image data
-        insert_image_data(image['image_name'], image['image_path'], image['image_width'], image['image_height'], image['site_name'], image['email'], image['project_id'], created_at)
+    def insert_mask_data(self, annotation_id, contour):
+        """Insert mask/contour data"""
+        # Convert contour to JSON string if it's not already
+        if isinstance(contour, (list, dict)):
+            contour = json.dumps(contour)
         
-        # Fetch the last inserted image_id (auto_increment)
-        # cursor.execute("SELECT LAST_INSERT_ID()")
-        # image_id = cursor.fetchone()[0]
-    cursor.execute("SELECT image_id,image_name,image_path from img.data.images;")
-    image_ids = {x['image_path'] :x['image_ids']  for x in cursor.fetchall()}
-    for image in image_data:
-        
-    cursor.close()
-    db.close()
+        insert_mask_query = """
+            INSERT INTO mask (annotation_id, contour)
+            VALUES (%s, %s)
+        """
+        if self.upload:
+            self.cursor.execute(insert_mask_query, (annotation_id, contour))
+            self.db.commit()
 
-    print("Data inserted successfully!")
+    def get_existing_image_ids(self):
+        """Get all existing image paths and their IDs"""
+        self.cursor.execute("SELECT image_id, image_path FROM images")
+        return {row['image_path']: row['image_id'] for row in self.cursor.fetchall()}
+
+    def close(self):
+        """Close database connection"""
+        self.cursor.close()
+        self.db.close()
+
+
+def upload_data(image_data,upload):
+    """Main function to upload image data with annotations"""
+    db_helper = DBHelper()
+    db_helper.upload =upload
+    
+    try:
+        # Get existing images to avoid duplicates
+        existing_images = db_helper.get_existing_image_ids()
+        
+        inserted_count = 0
+        skipped_count = 0
+        
+        for image in image_data:
+            # Skip if image already exists
+            if image['image_path'] in existing_images:
+                print(f"Skipping existing image: {image['image_name']}")
+                skipped_count += 1
+                continue
+            
+            # Convert created_at to datetime object
+            created_at = datetime.fromisoformat(image['created_at'].replace("Z", "+00:00"))
+            
+            # Get or create user_id
+            user_id = db_helper.get_user_id(image['usr'])
+            
+            # Insert image data
+            image_id = db_helper.insert_image_data(
+                image_name=image['image_name'],
+                image_path=image['image_path'],
+                width=image['image_width'],
+                height=image['image_height'],
+                site_name=image['site_name'],
+                user_id=user_id,
+                project=str(image['project_id']),
+                created_at=created_at
+            )
+            
+            print(f"Inserted image: {image['image_name']} (ID: {image_id})")
+            
+            # Insert annotations for this image
+            for annotation in image['annotations']:
+                # Get or create class_id
+                class_id = db_helper.get_class_id(annotation['classname'])
+                
+                # Insert annotation
+                annotation_id = db_helper.insert_annotation_data(
+                    image_id=image_id,
+                    class_id=class_id,
+                    x1=annotation['x1'],
+                    y1=annotation['y1'],
+                    x2=annotation['x2'],
+                    y2=annotation['y2']
+                )
+                
+                # Insert mask/contour if present
+                if 'contour' in annotation and annotation['contour']:
+                    db_helper.insert_mask_data(annotation_id, annotation['contour'])
+                
+                # print(f"  - Inserted annotation: {annotation['classname']} (ID: {annotation_id})")
+            
+            inserted_count += 1
+        
+        print(f"\nUpload complete!")
+        print(f"Inserted: {inserted_count} images")
+        print(f"Skipped: {skipped_count} images (already exist)")
+        
+    finally:
+        db_helper.close()
+
+
+# Main execution
+if __name__ == "__main__":
+    csv = "output_annotations.csv"
+    
+    # Test 1: Check CSV structure
+    df = pd.read_csv(csv)
+    required_cols = ['image_path', 'image_name', 'image_width', 'image_height', 
+                     'site_name', 'email', 'project_id', 'created_at',
+                     'x1', 'y1', 'x2', 'y2', 'classname', 'contour']
+    missing = set(required_cols) - set(df.columns)
+    if missing:
+        print(f"❌ Missing columns: {missing}")
+        exit(1)
+    
+    # Test 2: Convert data
+    image_data = convert_csv_to_image_data(csv)
+    print(f"Sample record: {image_data[0]}")
+    
+    # Test 3: Dry run (no actual insert)
+    upload_data(image_data, upload=False)  # Fix the bug here!
+    
+    # Test 4: Confirm before real upload
+    response = input("\n✓ Dry run successful. Proceed with upload? (yes/no): ")
+    if response.lower() == 'yes':
+        upload_data(image_data, upload=True)
+
+# SELECT a.annotation_id, b.class_name, c.image_path, d.email
+# FROM imgdata.annotations AS a 
+# JOIN imgdata.classes AS b ON a.class_id = b.class_id 
+# JOIN imgdata.images AS c ON a.image_id = c.image_id
+# JOIN imgdata.usr AS d ON c.user_id = d.user_id;
