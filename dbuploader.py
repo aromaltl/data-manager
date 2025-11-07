@@ -14,7 +14,7 @@ def convert_csv_to_image_data(csv_file):
         List of dictionaries with image data and nested annotations
     """
     # Read CSV file
-    if csv_file:
+    if type(csv_file) is str:
         df = pd.read_csv(csv_file)
     else:
         df = csv_file
@@ -82,6 +82,9 @@ class DBHelper:
         # Cache class_id mappings
         self.cursor.execute("SELECT class_id, class_name FROM classes")
         self.classid = {row["class_name"]: row["class_id"] for row in self.cursor.fetchall()}
+
+        self.cursor.execute("SELECT site_id, site_name FROM sites")
+        self.siteid = {row["site_name"]: row["site_id"] for row in self.cursor.fetchall()}
         
         # Cache user_id mappings
         self.cursor.execute("SELECT user_id, email FROM usr")
@@ -113,11 +116,22 @@ class DBHelper:
             class_id = self.cursor.lastrowid
             self.classid[class_name] = class_id
             return class_id
-
+    def get_site_id(self, site_name):
+        """Get or create class_id for given class_name"""
+        if site_name in self.siteid:
+            return self.siteid[site_name]
+        else:
+            input(f"New site '{site_name}' ?. ctrl+c to stop")
+            insert_class_query = "INSERT INTO sites (site_name) VALUES (%s)"
+            self.cursor.execute(insert_class_query, (site_name,))
+            self.db.commit()
+            site_id = self.cursor.lastrowid
+            self.siteid[site_name] = site_id
+            return site_id
     def insert_image_data(self, image_name, image_path, width, height, site_name, user_id, project, created_at):
         """Insert image data and return image_id"""
         insert_image_query = """
-            INSERT INTO images (image_name, image_path, width, height, site_name, user_id, project, created_at)
+            INSERT INTO images (image_name, image_path, width, height, site_id, user_id, project, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
         if self.upload:
@@ -152,8 +166,8 @@ class DBHelper:
 
     def get_existing_image_ids(self):
         """Get all existing image paths and their IDs"""
-        self.cursor.execute("SELECT image_id, image_path FROM images")
-        return {row['image_path']: row['image_id'] for row in self.cursor.fetchall()}
+        self.cursor.execute("SELECT image_id, site_id, image_path FROM images")
+        return {(row['image_path'],row['site_id']): row['image_id'] for row in self.cursor.fetchall()}
 
     def close(self):
         """Close database connection"""
@@ -174,9 +188,11 @@ def upload_data(image_data,upload):
         skipped_count = 0
         
         for image in image_data:
+            user_id = db_helper.get_user_id(image['usr'])
+            site_id = db_helper.get_site_id(image['site_name'])
             # Skip if image already exists
-            if image['image_path'] in existing_images:
-                print(f"Skipping existing image: {image['image_name']}")
+            if (image['image_path'],site_id) in existing_images:
+                print(f"Skipping existing image: {(image['image_path'],image['site_name'])}")
                 skipped_count += 1
                 continue
             
@@ -184,15 +200,14 @@ def upload_data(image_data,upload):
             created_at = datetime.fromisoformat(image['created_at'].replace("Z", "+00:00"))
             
             # Get or create user_id
-            user_id = db_helper.get_user_id(image['usr'])
-            
+
             # Insert image data
             image_id = db_helper.insert_image_data(
                 image_name=image['image_name'],
                 image_path=image['image_path'],
                 width=image['image_width'],
                 height=image['image_height'],
-                site_name=image['site_name'],
+                site_name=site_id,
                 user_id=user_id,
                 project=str(image['project_id']),
                 created_at=created_at

@@ -58,7 +58,10 @@ def create_label_studio_json(images_folder, labels_folder, notes_json_path, outp
         # Create task structure
         task = {
             "data": {
-                "image": f"/data/local-files/?d={img_path}"
+                "image": f"/data/local-files/?d={img_path}",
+                "project_id": os.path.basename(os.path.dirname(img_path)),
+                "site_name" :sitename
+
             }
         }
         
@@ -131,6 +134,7 @@ def create_label_studio_json(images_folder, labels_folder, notes_json_path, outp
 if __name__ == "__main__":
     # Modify these paths to match your folder structure
     path= '/run/user/1000/gvfs/smb-share:server=anton.local,share=labelstudio/data/FIXED_LINEAR_EXPORTS_Exports_1.0/ADANI-2025-05-17_FP'
+    
     images_folder = f"{path}/images"
     labels_folder = f"{path}/labels"
     notes_json = f"{path}/notes.json"
