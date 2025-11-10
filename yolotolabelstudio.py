@@ -2,8 +2,10 @@ import json
 import os
 from pathlib import Path
 from PIL import Image
-
-def create_label_studio_json(images_folder, labels_folder, notes_json_path, output_path="label_studio_tasks.json", image_width=None, image_height=None):
+import uuid
+import shutil
+import tqdm
+def create_label_studio_json(images_folder, labels_folder, notes_json_path, outfolder, output_path="label_studio_tasks.json", image_width=None, image_height=None):
     """
     Create Label Studio JSON format from images, contour labels, and notes.
     
@@ -46,7 +48,12 @@ def create_label_studio_json(images_folder, labels_folder, notes_json_path, outp
     for img_file in sorted(images):
         img_path = os.path.join(images_folder, img_file)
         img_name = Path(img_file).stem
-        
+        out_img_path =os.path.join(outfolder,img_file)
+        if os.path.exists(img_path):
+            if not os.path.exists(out_img_path):
+                shutil.copyfile(img_path,out_img_path)
+        else:
+            print("File Not Found !!!!")
         # Get image dimensions
         try:
             with Image.open(img_path) as img:
@@ -58,7 +65,7 @@ def create_label_studio_json(images_folder, labels_folder, notes_json_path, outp
         # Create task structure
         task = {
             "data": {
-                "image": f"/data/local-files/?d={img_path}",
+                "image": f"/data/local-files/?d={out_img_path}",
                 "project_id": os.path.basename(os.path.dirname(img_path)),
                 "site_name" :sitename
 
@@ -96,7 +103,7 @@ def create_label_studio_json(images_folder, labels_folder, notes_json_path, outp
                         
                         # Create polygon prediction in Label Studio format
                         prediction = {
-                            "id": f"{img_name}-{line_idx}",
+                            "id": str(uuid.uuid4()),
                             "from_name": "polygon",
                             "to_name": "image",
                             "original_width": img_width,
@@ -133,10 +140,19 @@ def create_label_studio_json(images_folder, labels_folder, notes_json_path, outp
 # Example usage
 if __name__ == "__main__":
     # Modify these paths to match your folder structure
-    path= '/run/user/1000/gvfs/smb-share:server=anton.local,share=labelstudio/data/FIXED_LINEAR_EXPORTS_Exports_1.0/ADANI-2025-05-17_FP'
+    path= '/home/tl028/Desktop/seekright_v4_master-master/seekright_v4_master-master(2)/project-125-at-2025-05-22-14-19-b04a3e0f'
+    outfolder= "/run/user/1000/gvfs/smb-share:server=anton.local,share=labelstudio/data/2025/11/2025-11-06/001/images" # copy images
     
+    sitename = "Qatar"
     images_folder = f"{path}/images"
     labels_folder = f"{path}/labels"
     notes_json = f"{path}/notes.json"
     
-    create_label_studio_json(images_folder, labels_folder, notes_json)
+    create_label_studio_json(images_folder, labels_folder, notes_json ,outfolder)
+    
+    
+    
+    
+    
+    
+    

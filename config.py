@@ -1,9 +1,10 @@
 
-annotation_directory = ""
+annotation_directory = "/home/tl028/SKRPL"
 train_ratio = 0.8
 csvpath = ""
 labelstudiojson= ""
-Query="""
+fn_image_path = lambda x: x.replace("/data/local-files/?d=/run/user/1000/gvfs/smb-share:server=anton.local,share=labelstudio/data","/run/user/1000/gvfs/smb-share:server=anton.local,share=sync/Label-studio_backup/data")
+query="""
 	SELECT
 	    i.image_id,
 	    i.image_name,
@@ -26,5 +27,6 @@ Query="""
 	INNER JOIN classes c ON a.class_id = c.class_id
 	INNER JOIN usr u ON i.user_id = u.user_id
 	LEFT JOIN mask m ON a.annotation_id = m.annotation_id
+    where i.image_id < 800;
 """
 

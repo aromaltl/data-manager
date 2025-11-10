@@ -35,10 +35,13 @@ def json_to_csv(json_file_path, csv_file_path):
             for result in annotation.get('result', []):
                 original_width = result['original_width']
                 original_height = result['original_height']
-                
+                # print(result['value'])
                 # Extract polygon points
                 points = result['value']['points']
-                class_name = result['value']['polygonlabels'][0]
+                if 'polygonlabels' in result['value']:
+                    class_name = result['value']['polygonlabels'][0]
+                elif 'rectanglelabels' in result['value']:
+                    class_name = result['value']['rectanglelabels'][0]
                 
                 # Calculate bounding box (x1, y1, x2, y2) from polygon points
                 if points:
@@ -74,8 +77,8 @@ def json_to_csv(json_file_path, csv_file_path):
     
     # Write to CSV
     fieldnames = ['image_name', 'image_path', 'image_width', 'image_height', 'site_name',
-                  'x1', 'y1', 'x2', 'y2', 'classname', 'contour', 
-                  'email', 'project_id', 'created_at']
+                  'x1', 'y1', 'x2', 'y2', 'classname', 
+                  'email', 'project_id', 'created_at', 'contour']
     
     with open(csv_file_path, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -191,7 +194,7 @@ def csv_to_json(csv_file_path, json_file_path):
 # Example usage
 if __name__ == "__main__":
     # Convert JSON to CSV
-    json_to_csv('/home/tl028/Desktop/data-manager/data-manager/label_studio_tasks.json', 'output_annotations.csv')
+    json_to_csv('/home/tl028/Desktop/data-manager/data-manager/Qatar_New_Annotated_Images_Nov-6.json', 'output_annotations.csv')
     
     # Convert CSV back to JSON
-    csv_to_json('/home/tl028/Desktop/data-manager/data-manager/reconstructed_all_annotations.csv', 'reconstructed_annotations.json')
+    # csv_to_json('/home/tl028/Desktop/data-manager/data-manager/reconstructed_all_annotations.csv', 'reconstructed_annotations.json')

@@ -12,12 +12,10 @@ class DBReader:
         )
         self.cursor = self.db.cursor(dictionary=True)
     
-    def fetch_all_data(self):
-
-
+    def fetch_query_data(self):
+        print(f"Query :\n {config.query}")
         self.cursor.execute(config.query)
         results = self.cursor.fetchall()
-        
         return results
     
     
@@ -58,7 +56,7 @@ class DBReader:
         self.db.close()
 
 
-def reconstruct_csv(output_file='reconstructed_annotations.csv', filters=None):
+def reconstruct_csv(output_file='reconstructed_annotations.csv', show=None):
     """
     Reconstruct CSV file from database.
     
@@ -87,7 +85,7 @@ def reconstruct_csv(output_file='reconstructed_annotations.csv', filters=None):
         # Fetch data
 
 
-        data = db_reader.fetch_all_data()
+        data = db_reader.fetch_query_data()
         
         if not data:
             print("\n⚠️  No data found!")
@@ -115,7 +113,8 @@ def reconstruct_csv(output_file='reconstructed_annotations.csv', filters=None):
         
         # Show sample
         print(f"\nSample of reconstructed data (first 3 rows):")
-        print(df.head(3).to_string())
+        # print(df.head(1).to_string())
+        print(df.head(1))
         
         # Show unique images
         unique_images = df['image_path'].nunique()
@@ -133,7 +132,7 @@ if __name__ == "__main__":
     
     # Example 1: Reconstruct entire database to CSV
 
-    df_all = reconstruct_csv('reconstructed_all_annotations.csv')
+    df_all = reconstruct_csv('query_annotations.csv')
     
     print("\n\n")
     

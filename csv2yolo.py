@@ -3,7 +3,7 @@
 YOLOv8 Instance Segmentation Dataset Creator
 Converts CSV/DataFrame with contour data to YOLOv8 format
 """
-
+import sys
 import os
 import json
 import shutil
@@ -15,12 +15,12 @@ import cv2
 from typing import List, Dict, Tuple, Any
 import argparse
 import glob
-import config
+import config 
 
 class YOLOv8DatasetCreator:
     """Create YOLOv8 instance segmentation dataset from CSV with contours"""
     
-    def __init__(self, csv_path: str, output_dir: str = "yolov8_dataset"):
+    def __init__(self, df : pd.DataFrame, csv_path: str, output_dir: str = "yolov8_dataset"):
         """
         Initialize the dataset creator
         
@@ -30,7 +30,7 @@ class YOLOv8DatasetCreator:
         """
         self.csv_path = csv_path
         self.output_dir = Path(output_dir)
-        self.df = None
+        self.df = df
         self.class_names = []
         self.class_to_idx = {}
         
@@ -46,7 +46,8 @@ class YOLOv8DatasetCreator:
             self.df = pd.read_csv(self.csv_path)
         print(f"Total images in DB : {len(self.df)}")
         alreadypresent = set([int(os.path.basename(xyz).split(".")[0]) for xyz in glob.glob(os.path.join(self.output_dir ,  "**" ,"*.txt"),recursive=True)])
-        self.df = self.df[self.df["image_id"].apply(lambda xyz: True if xyz not in alreadypresent else False) ]
+        self.df = self.df[self.df["image_id"].apply(lambda xyz: True if int(xyz) not in alreadypresent else False) ]
+        self.df["image_path"] = self.df["image_path"].apply(config.fn_image_path)
         self.df.reset_index(inplace=True, drop =True)
         print(f"New images : {len(self.df)}")
         # Check required columns
@@ -143,16 +144,18 @@ class YOLOv8DatasetCreator:
         
         Args:
             points: List of [x, y] points
-            img_width: Image width
+            img_width: Image width 
             img_height: Image height
-            
+            percentage to ratio format , width and height not required !!!!!!!!!!!
         Returns:
             Flat list of normalized coordinates
         """
         normalized = []
         for x, y in points:
-            norm_x = x / img_width
-            norm_y = y / img_height
+            norm_x = x / 100
+            norm_y = y / 100
+            # norm_x = x / img_width
+            # norm_y = y / img_height
             # Ensure values are in [0, 1]
             norm_x = max(0, min(1, norm_x))
             norm_y = max(0, min(1, norm_y))
@@ -205,11 +208,16 @@ class YOLOv8DatasetCreator:
             # Try to read image to get dimensions
             
             if os.path.exists(image_path):
-
+                
                 output_img_path = self.output_dir / 'images' / split / f'{image_id}.{image_path.split(".")[-1]}'
-                shutil.copy2(image_path, output_img_path)
+                if not os.path.exists(output_img_path):
+                    shutil.copy2(image_path, output_img_path)
                 stats[split]['images'] += 1
-
+            else:
+                print(f"No image found {image_path} ...")
+                print("!!!!!!! exiting !!!!!!!")
+                sys.exit()
+                raise ValueError
 
             
             # Process annotations for this image
@@ -237,13 +245,13 @@ class YOLOv8DatasetCreator:
             
             # Write label file
             if label_lines:
-                label_path = self.output_dir / 'labels' / split / f"{Path(image_id).stem}.txt"
+                label_path = self.output_dir / 'labels' / split / f"{Path(str(image_id)).stem}.txt"
                 with open(label_path, 'w') as f:
                     f.write('\n'.join(label_lines))
         
         # Print statistics
         print("\nDataset Statistics:")
-        for split in ['train', 'val', 'test']:
+        for split in ['train', 'test']:
             print(f"  {split:5s}: {stats[split]['images']:4d} images, {stats[split]['annotations']:5d} annotations")
         
     def create_yaml(self):
@@ -296,13 +304,14 @@ class YOLOv8DatasetCreator:
 
 
 def main():
+    from dbdownloader import reconstruct_csv
 
-    
+    df = reconstruct_csv('reconstructed_all_annotations.csv')
     # Create dataset
-    creator = YOLOv8DatasetCreator(args.csv_path, args.output_dir)
-    creator.train_ratio = args.train_ratio
-    creator.val_ratio = args.val_ratio
-    creator.test_ratio = args.test_ratio
+    creator = YOLOv8DatasetCreator(df, config.csvpath,  config.annotation_directory)
+    creator.train_ratio =  config.train_ratio
+
+
     creator.run()
 
 
